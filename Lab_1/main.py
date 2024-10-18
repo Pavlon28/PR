@@ -39,6 +39,8 @@ def send_http_request(host, path, use_https=True):
     return response.decode()
 
 def get_html_body(response):
+    if "\r\n\r\n" not in response:
+        return None
     headers, body = response.split("\r\n\r\n", 1)
     if "200 OK" not in headers:
         return None
@@ -64,17 +66,8 @@ def price_filter(product, min_price, max_price):
 
 # JSON Serialization
 def serialize_to_json(data):
-    json_str = "{"
-    json_items = []
-
-    for item in data:
-        json_item = f'{{"name": "{item["name"]}", "price": {item["price"]}}}'
-        json_items.append(json_item)
-
-    json_str += ", ".join(json_items)
-    json_str += "}"
-
-    return json_str
+    import json
+    return json.dumps(data)
 
 # XML Serialization
 def serialize_to_xml(data):
@@ -86,6 +79,56 @@ def serialize_to_xml(data):
     xml_str += "</products>"
 
     return xml_str
+
+# Custom Serialization
+def serialize_to_custom_format(data):
+    serialized_str = "Products:\n"
+
+    for item in data:
+        serialized_str += "  Product:\n"
+        serialized_str += f"    -product title: {item['name']}\n"
+        serialized_str += f"    -price: {item['price']} MDL\n"
+
+        # Calculate price with interest (e.g., adding 20% interest)
+        price_with_interest = int(item['price'] * 1.20)
+        serialized_str += f"    -price with interest: {price_with_interest} MDL\n"
+
+        # Include the product link
+        serialized_str += f"    -link: {item['link']}\n"
+
+    return serialized_str
+
+# Custom Deserialization
+def deserialize_from_custom_format(serialized_str):
+    lines = serialized_str.strip().split("\n")
+    products = []
+    current_product = {}
+
+    for line in lines:
+        line = line.strip()
+
+        if line.startswith("Product:"):
+            if current_product:  # If a product was being parsed, save it
+                products.append(current_product)
+            current_product = {}
+
+        elif line.startswith("-product title:"):
+            current_product['name'] = line.split(": ", 1)[1].strip()
+
+        elif line.startswith("-price:"):
+            current_product['price'] = int(line.split(": ", 1)[1].strip().replace("MDL", "").strip())
+
+        elif line.startswith("-price with interest:"):
+            current_product['price_with_interest'] = int(line.split(": ", 1)[1].strip().replace("MDL", "").strip())
+
+        elif line.startswith("-link:"):
+            current_product['link'] = line.split(": ", 1)[1].strip()
+
+    # Append the last product if it exists
+    if current_product:
+        products.append(current_product)
+
+    return products
 
 # Send the raw request to the site
 host = "ultra.md"
@@ -121,19 +164,24 @@ if html_content:
                     validated_data2 = validate_product(name, price2)
                     if validated_data2 is None:
                         continue
+
+                    # Add link and price with interest to validated data
+                    validated_data['link'] = link
+                    validated_data['price_with_interest'] = validated_data2['price']
                     validated_products.append(validated_data)
+
                     # Print product details
                     print(f"Product: {validated_data['name']}\nPrice: {validated_data['price']} MDL\nPrice with interest: {validated_data2['price']} MDL\nLink: {link}\n")
         except AttributeError:
             continue
 
-    # Then filter and display the products within the range
+    # Filter and display the products within the price range
     min_price = 100
     max_price = 1000
 
     products_in_eur = list(map(lambda p: {**p, 'price': convert_price(p['price'], 'EUR')}, validated_products))
     filtered_products = list(filter(lambda p: price_filter(p, min_price, max_price), products_in_eur))
-    total_price = reduce(lambda acc, p: acc + p['price'], filtered_products, 0)
+    total_price = reduce((lambda acc, p: acc + p['price']), filtered_products, 0)
 
     final_data = {
         "filtered_products": filtered_products,
@@ -141,9 +189,10 @@ if html_content:
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    # Serialize to JSON and XML
+    # Serialize to JSON, XML, and custom format
     json_output = serialize_to_json(filtered_products)
     xml_output = serialize_to_xml(filtered_products)
+    custom_output = serialize_to_custom_format(validated_products)
 
     # Print serialized outputs
     print("\nSerialized JSON:")
@@ -151,6 +200,14 @@ if html_content:
 
     print("\nSerialized XML:")
     print(xml_output)
+
+    print("\nCustom Serialized Format:")
+    print(custom_output)
+
+    # Deserialize the custom format back to Python object
+    deserialized_data = deserialize_from_custom_format(custom_output)
+    print("\nDeserialized Data (Custom Format):")
+    print(deserialized_data)
 
     # Display filtered products and total price
     print("\nFiltered Products:")
