@@ -62,6 +62,31 @@ def convert_price(price, to_currency='EUR'):
 def price_filter(product, min_price, max_price):
     return min_price <= product['price'] <= max_price
 
+# JSON Serialization
+def serialize_to_json(data):
+    json_str = "{"
+    json_items = []
+
+    for item in data:
+        json_item = f'{{"name": "{item["name"]}", "price": {item["price"]}}}'
+        json_items.append(json_item)
+
+    json_str += ", ".join(json_items)
+    json_str += "}"
+
+    return json_str
+
+# XML Serialization
+def serialize_to_xml(data):
+    xml_str = "<products>"
+
+    for item in data:
+        xml_str += f'<product><name>{item["name"]}</name><price>{item["price"]}</price></product>'
+
+    xml_str += "</products>"
+
+    return xml_str
+
 # Send the raw request to the site
 host = "ultra.md"
 path = "/category/tv-televizory"
@@ -115,6 +140,17 @@ if html_content:
         "total_price": total_price,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+    # Serialize to JSON and XML
+    json_output = serialize_to_json(filtered_products)
+    xml_output = serialize_to_xml(filtered_products)
+
+    # Print serialized outputs
+    print("\nSerialized JSON:")
+    print(json_output)
+
+    print("\nSerialized XML:")
+    print(xml_output)
 
     # Display filtered products and total price
     print("\nFiltered Products:")
