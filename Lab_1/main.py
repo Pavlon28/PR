@@ -1,119 +1,127 @@
-import requests
+import socket
+import ssl
 from bs4 import BeautifulSoup
 from functools import reduce
 from datetime import datetime, timezone
 
-# Conversion rates
 MDL_TO_EUR = 0.05  # Example conversion rate
 EUR_TO_MDL = 20.0  # Example conversion rate
 
+def send_http_request(host, path, use_https=True):
+    port = 443 if use_https else 80
+    request = f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if use_https:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE  # Skip SSL verification
+
+            with context.wrap_socket(s, server_hostname=host) as ssock:
+                ssock.connect((host, port))
+                ssock.sendall(request.encode())
+                response = b""
+                while True:
+                    data = ssock.recv(4096)
+                    if not data:
+                        break
+                    response += data
+        else:
+            s.connect((host, port))
+            s.sendall(request.encode())
+            response = b""
+            while True:
+                data = s.recv(4096)
+                if not data:
+                    break
+                response += data
+
+    return response.decode()
+
+def get_html_body(response):
+    headers, body = response.split("\r\n\r\n", 1)
+    if "200 OK" not in headers:
+        return None
+    return body
+
 def validate_product(name, price):
-    # Clean up name
     name = name.strip()
-
-    # Remove spaces and the 'lei' currency symbol
     cleaned_price = price.replace(" ", "").replace("lei", "")
-
     try:
-        # Convert cleaned price to integer
         price_int = int(cleaned_price)
     except ValueError:
-        print(f"Invalid price format: {price}")
-        return None  # Return None if price is not valid
-
+        return None
     return {"name": name, "price": price_int}
 
 def convert_price(price, to_currency='EUR'):
     if to_currency == 'EUR':
-        return price * MDL_TO_EUR  # Convert MDL to EUR
+        return price * MDL_TO_EUR
     else:
-        return int(price / MDL_TO_EUR)  # Convert EUR to MDL
+        return int(price / MDL_TO_EUR)
 
 def price_filter(product, min_price, max_price):
     return min_price <= product['price'] <= max_price
 
-url = "https://ultra.md/category/tv-televizory"
-response = requests.get(url)
+# Send the raw request to the site
+host = "ultra.md"
+path = "/category/tv-televizory"
+raw_response = send_http_request(host, path, use_https=True)
 
-# Check if the request was successful
-if response.status_code == 200:
-    print("Successfully retrieved HTML content from URL.")
+html_content = get_html_body(raw_response)
 
-    soup = BeautifulSoup(response.text, "html.parser")
+if html_content:
+    soup = BeautifulSoup(html_content, "html.parser")
     products = soup.find_all("div", class_="product-block")
 
     validated_products = []
 
+    # First display all products with their details
+    print("All Products:")
     for product in products:
         try:
-            # Extract product name, price, and link
             name = product.find("a", class_="product-text").text
             price = " ".join(product.find("span", class_="text-blue text-xl font-bold dark:text-white").text.split())
             link = product.find("a", class_="product-text")["href"]
 
-            # Validate product data
             validated_data = validate_product(name, price)
             if validated_data is None:
-                print(f"Invalid price for product {name}. Skipping.")
                 continue
 
-            # Scrape additional product info from the product page
-            response2 = requests.get(link)
-            if response2.status_code == 200:
-                soup2 = BeautifulSoup(response2.text, "html.parser")
-
-                # Safely find price2 and check if it exists
+            response2 = send_http_request(host, link, use_https=True)
+            if response2:
+                soup2 = BeautifulSoup(response2, "html.parser")
                 price2_label = soup2.find("label", class_="cursor-pointer font-semibold")
                 if price2_label is not None:
                     price2 = price2_label.text.strip()
-
-                    # Validate the second price
                     validated_data2 = validate_product(name, price2)
                     if validated_data2 is None:
-                        print(f"Invalid price2 for product {name}. Skipping.")
                         continue
-
-                    # Append validated product data
                     validated_products.append(validated_data)
-
-                    # Print original output with link
+                    # Print product details
                     print(f"Product: {validated_data['name']}\nPrice: {validated_data['price']} MDL\nPrice with interest: {validated_data2['price']} MDL\nLink: {link}\n")
-
-                else:
-                    print(f"Price2 not found for product {name}. Skipping.")
-            else:
-                print(f"Failed to retrieve content for product link {link}. Status code: {response2.status_code}")
-
         except AttributeError:
             continue
 
-    # Processing the products using map, filter, and reduce
-    min_price = 100  # Set your minimum price
-    max_price = 1000  # Set your maximum price
+    # Then filter and display the products within the range
+    min_price = 100
+    max_price = 1000
 
-    # Map: Convert prices to EUR
     products_in_eur = list(map(lambda p: {**p, 'price': convert_price(p['price'], 'EUR')}, validated_products))
-
-    # Filter: Keep products within the price range
     filtered_products = list(filter(lambda p: price_filter(p, min_price, max_price), products_in_eur))
-
-    # Reduce: Sum up the prices of the filtered products
     total_price = reduce(lambda acc, p: acc + p['price'], filtered_products, 0)
 
-    # Prepare the final data structure
     final_data = {
         "filtered_products": filtered_products,
         "total_price": total_price,
-        "timestamp": datetime.now(timezone.utc).isoformat()  # UTC timestamp
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    # Pretty print the final result
+    # Display filtered products and total price
     print("\nFiltered Products:")
     for product in final_data['filtered_products']:
         print(f"- {product['name']}: €{product['price']:.2f}")
 
     print(f"\nTotal Price: €{final_data['total_price']:.2f}")
     print(f"Timestamp: {final_data['timestamp']}")
-
 else:
-    print(f"Failed to retrieve content. Status code: {response.status_code}")
+    print("Failed to retrieve content.")
