@@ -4,8 +4,8 @@ from bs4 import BeautifulSoup
 from functools import reduce
 from datetime import datetime, timezone
 
-MDL_TO_EUR = 0.05  # Example conversion rate
-EUR_TO_MDL = 20.0  # Example conversion rate
+MDL_TO_EUR = 0.05
+EUR_TO_MDL = 20.0
 
 def send_http_request(host, path, use_https=True):
     port = 443 if use_https else 80
@@ -64,71 +64,97 @@ def convert_price(price, to_currency='EUR'):
 def price_filter(product, min_price, max_price):
     return min_price <= product['price'] <= max_price
 
-# JSON Serialization
+def serialize(data):
+    if isinstance(data, dict):
+        serialized_str = "[D:"
+        for key, value in data.items():
+            serialized_str += f"{key}={serialize(value)};"
+        return serialized_str.rstrip(';') + "]"
+
+    elif isinstance(data, list):
+        serialized_str = "[L:"
+        for item in data:
+            serialized_str += f"{serialize(item)};"
+        return serialized_str.rstrip(';') + "]"
+
+    elif isinstance(data, str):
+        return f'str("{data}")'
+
+    elif isinstance(data, int):
+        return f'int({data})'
+
+    elif isinstance(data, float):
+        return f'float({data})'
+
+    else:
+        return "unknown"
+
+def deserialize(data):
+    result = []
+    # Split by the delimiter used for different products
+    products = data.strip('[]').split('];[')
+
+    for product in products:
+        product_dict = {}
+        # Extract name
+        name_part = product.split(';')[0].split('=')[1].strip('str("').strip('")')
+        product_dict['name'] = name_part
+
+        # Extract price
+        price_part = product.split(';')[1].split('=')[1].strip('int()')
+        product_dict['price'] = int(price_part)
+
+        # Extract link
+        link_part = product.split(';')[2].split('=')[1].strip('str("').strip('")')
+        product_dict['link'] = link_part
+
+        # Extract price with interest
+        price_with_interest_part = product.split(';')[3].split('=')[1].strip('int()')
+        product_dict['price_with_interest'] = int(price_with_interest_part)
+
+        result.append(product_dict)
+
+    return result
+
 def serialize_to_json(data):
-    import json
-    return json.dumps(data)
+    if isinstance(data, list):
+        json_str = "["
+        for item in data:
+            json_str += serialize_to_json(item) + ","
+        json_str = json_str.rstrip(',') + "]"
+        return json_str
+    elif isinstance(data, dict):
+        json_str = "{"
+        for key, value in data.items():
+            json_str += f'"{key}": {serialize_to_json(value)},'
+        json_str = json_str.rstrip(',') + "}"
+        return json_str
+    elif isinstance(data, str):
+        return f'"{data}"'
+    elif isinstance(data, (int, float)):
+        return str(data)
+    else:
+        return "null"
 
-# XML Serialization
 def serialize_to_xml(data):
-    xml_str = "<products>"
-
-    for item in data:
-        xml_str += f'<product><name>{item["name"]}</name><price>{item["price"]}</price></product>'
-
-    xml_str += "</products>"
-
-    return xml_str
-
-# Custom Serialization
-def serialize_to_custom_format(data):
-    serialized_str = "Products:\n"
-
-    for item in data:
-        serialized_str += "  Product:\n"
-        serialized_str += f"    -product title: {item['name']}\n"
-        serialized_str += f"    -price: {item['price']} MDL\n"
-
-        # Calculate price with interest (e.g., adding 20% interest)
-        price_with_interest = int(item['price'] * 1.20)
-        serialized_str += f"    -price with interest: {price_with_interest} MDL\n"
-
-        # Include the product link
-        serialized_str += f"    -link: {item['link']}\n"
-
-    return serialized_str
-
-# Custom Deserialization
-def deserialize_from_custom_format(serialized_str):
-    lines = serialized_str.strip().split("\n")
-    products = []
-    current_product = {}
-
-    for line in lines:
-        line = line.strip()
-
-        if line.startswith("Product:"):
-            if current_product:  # If a product was being parsed, save it
-                products.append(current_product)
-            current_product = {}
-
-        elif line.startswith("-product title:"):
-            current_product['name'] = line.split(": ", 1)[1].strip()
-
-        elif line.startswith("-price:"):
-            current_product['price'] = int(line.split(": ", 1)[1].strip().replace("MDL", "").strip())
-
-        elif line.startswith("-price with interest:"):
-            current_product['price_with_interest'] = int(line.split(": ", 1)[1].strip().replace("MDL", "").strip())
-
-        elif line.startswith("-link:"):
-            current_product['link'] = line.split(": ", 1)[1].strip()
-
-    # Append the last product if it exists
-    if current_product:
-        products.append(current_product)
-
-    return products
+    if isinstance(data, list):
+        xml_str = "<products>"
+        for item in data:
+            xml_str += serialize_to_xml(item)
+        xml_str += "</products>"
+        return xml_str
+    elif isinstance(data, dict):
+        xml_str = "<product>"
+        for key, value in data.items():
+            xml_str += f"<{key}>{serialize_to_xml(value)}</{key}>"
+        xml_str += "</product>"
+        return xml_str
+    elif isinstance(data, str):
+        return data
+    elif isinstance(data, (int, float)):
+        return str(data)
+    else:
+        return ""
 
 # Send the raw request to the site
 host = "ultra.md"
@@ -155,6 +181,7 @@ if html_content:
             if validated_data is None:
                 continue
 
+            # Send a second request to get additional product details
             response2 = send_http_request(host, link, use_https=True)
             if response2:
                 soup2 = BeautifulSoup(response2, "html.parser")
@@ -165,13 +192,14 @@ if html_content:
                     if validated_data2 is None:
                         continue
 
-                    # Add link and price with interest to validated data
                     validated_data['link'] = link
                     validated_data['price_with_interest'] = validated_data2['price']
                     validated_products.append(validated_data)
 
-                    # Print product details
-                    print(f"Product: {validated_data['name']}\nPrice: {validated_data['price']} MDL\nPrice with interest: {validated_data2['price']} MDL\nLink: {link}\n")
+                    print(f"Product: {validated_data['name']}\n"
+                          f"Price: {validated_data['price']} MDL\n"
+                          f"Price with interest: {validated_data2['price']} MDL\n"
+                          f"Link: {link}\n")
         except AttributeError:
             continue
 
@@ -189,25 +217,27 @@ if html_content:
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    # Serialize to JSON, XML, and custom format
-    json_output = serialize_to_json(filtered_products)
-    xml_output = serialize_to_xml(filtered_products)
-    custom_output = serialize_to_custom_format(validated_products)
+    # Serialize the validated products to custom format
+    custom_output = serialize(validated_products)
 
     # Print serialized outputs
-    print("\nSerialized JSON:")
-    print(json_output)
-
-    print("\nSerialized XML:")
-    print(xml_output)
-
     print("\nCustom Serialized Format:")
     print(custom_output)
 
-    # Deserialize the custom format back to Python object
-    deserialized_data = deserialize_from_custom_format(custom_output)
+    # Deserialize the custom format back to a Python object
+    deserialized_data = deserialize(custom_output)
     print("\nDeserialized Data (Custom Format):")
     print(deserialized_data)
+
+    # Serialize to JSON format
+    json_output = serialize_to_json(validated_products)
+    print("\nJSON Serialized Format:")
+    print(json_output)
+
+    # Serialize to XML format
+    xml_output = serialize_to_xml(validated_products)
+    print("\nXML Serialized Format:")
+    print(xml_output)
 
     # Display filtered products and total price
     print("\nFiltered Products:")
