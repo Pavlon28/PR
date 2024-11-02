@@ -11,7 +11,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
                     price TEXT,
-                    link TEXT,
+                    link TEXT UNIQUE,
                     additional_info TEXT
                 )''')
 conn.commit()
@@ -30,9 +30,10 @@ if response.status_code == 200:
 
     for product in products:
         try:
-            name = product.find("a", class_="product-text").text
+            name = product.find("a", class_="product-text").text.strip()
             price = " ".join(product.find("span", class_="text-blue text-xl font-bold dark:text-white").text.split())
             link = product.find("a", class_="product-text")["href"]
+
             response2 = requests.get(link)
             soup2 = BeautifulSoup(response2.text, "html.parser")
 
@@ -40,19 +41,26 @@ if response.status_code == 200:
             info_label = soup2.find("label", class_="cursor-pointer font-semibold")
             info = info_label.text.strip() if info_label else "No additional info"
 
-            # Insert the product data into the database
-            cursor.execute('''INSERT INTO products (name, price, link, additional_info) 
-                              VALUES (?, ?, ?, ?)''', (name, price, link, info))
+            # Check if the product already exists in the database
+            cursor.execute("SELECT COUNT(*) FROM products WHERE link=?", (link,))
+            if cursor.fetchone()[0] == 0:  # If the product doesn't exist
+                # Insert the product data into the database
+                cursor.execute('''INSERT INTO products (name, price, link, additional_info) 
+                                  VALUES (?, ?, ?, ?)''', (name, price, link, info))
+                print(f"Inserted: {name}")
+            else:
+                print(f"Product already exists: {name}")
+
         except Exception as e:
-            pass
+            print(f"Error processing product: {e}")
 
     # Commit all insertions at once
     conn.commit()
 
     # Optional: Confirm data retrieval
-    cursor.execute("SELECT * FROM products")
-    rows = cursor.fetchall()
-    print(f"\nThere are {len(rows)} products in the database.")
+    cursor.execute("SELECT COUNT(*) FROM products")
+    count = cursor.fetchone()[0]
+    print(f"\nThere are {count} products in the database.")
 
 else:
     print(f"Failed to retrieve content. Status code: {response.status_code}")
