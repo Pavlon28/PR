@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import sqlite3
+import json
 
 app = Flask(__name__)
 
@@ -31,15 +32,30 @@ def create_product():
     finally:
         conn.close()
 
-# Read (Retrieve)
+# Read (Retrieve) with Pagination
 @app.route('/products', methods=['GET'])
 def get_products():
+    # Get pagination parameters from query string, default to limit=5 and offset=0
+    limit = request.args.get('limit', default=5, type=int)
+    offset = request.args.get('offset', default=0, type=int)
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM products")
+    # Fetch products with limit and offset
+    cursor.execute("SELECT * FROM products LIMIT ? OFFSET ?", (limit, offset))
     products = cursor.fetchall()
-    return jsonify([dict(product) for product in products]), 200
+
+    # Get the total count of products for pagination information
+    cursor.execute("SELECT COUNT(*) FROM products")
+    total_count = cursor.fetchone()[0]
+
+    return jsonify({
+        "total_count": total_count,
+        "offset": offset,
+        "limit": limit,
+        "products": [dict(product) for product in products]
+    }), 200
 
 # Update
 @app.route('/products/<int:product_id>', methods=['PUT'])
@@ -74,6 +90,41 @@ def delete_product(product_id):
         return jsonify({"message": "Product not found"}), 404
 
     return jsonify({"message": "Product deleted successfully"}), 200
+
+# File Upload Handler
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files['file']
+
+    # Check if the file is a JSON file
+    if file.filename == '' or not file.filename.endswith('.json'):
+        return jsonify({"error": "Invalid file type, please upload a JSON file"}), 400
+
+    # Read and parse the JSON file
+    try:
+        data = json.load(file)
+
+        # Extract data from JSON and insert into the database
+        name = data.get('name')
+        price = data.get('price')
+        link = data.get('link')
+        additional_info = data.get('additional_info')
+
+        # Insert data into the database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''INSERT INTO products (name, price, link, additional_info)
+                          VALUES (?, ?, ?, ?)''', (name, price, link, additional_info))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": "Product uploaded and saved successfully"}), 201
+    except json.JSONDecodeError:
+        return jsonify({"error": "Failed to parse JSON file"}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)

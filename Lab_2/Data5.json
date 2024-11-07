@@ -1,0 +1,6 @@
+{
+  "name": "Sample Product",
+  "price": "$199.99",
+  "link": "https://example.com/sample-product",
+  "additional_info": "This is a sample product description."
+}
