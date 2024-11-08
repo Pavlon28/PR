@@ -1,6 +1,14 @@
-{
-  "name": "Sample Product",
-  "price": "$199.99",
-  "link": "https://example.com/sample-product",
-  "additional_info": "This is a sample product description."
-}
+[
+  {
+    "name": "Product1",
+    "price": 100,
+    "link": "http://example.com/product1",
+    "additional_info": "Some info"
+  },
+  {
+    "name": "Product2",
+    "price": 200,
+    "link": "http://example.com/product2",
+    "additional_info": "More info"
+  }
+]
