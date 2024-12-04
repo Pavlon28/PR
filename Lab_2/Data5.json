@@ -1,14 +1,14 @@
 [
   {
-    "name": "Product1",
+    "name": "Product5",
     "price": 100,
-    "link": "http://example.com/product1",
+    "link": "http://example.com/product5",
     "additional_info": "Some info"
   },
   {
-    "name": "Product2",
+    "name": "Product6",
     "price": 200,
-    "link": "http://example.com/product2",
+    "link": "http://example.com/product6",
     "additional_info": "More info"
   }
 ]

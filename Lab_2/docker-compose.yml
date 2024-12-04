@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"   # Map external port 5002 to internal port 5000
+      - "5003:5001"   # Map external port 5003 to internal port 5001
+    environment:
+      DATABASE_URI: "postgresql://your_username:your_password@db:5432/products"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: your_username
+      POSTGRES_PASSWORD: your_password
+      POSTGRES_DB: products
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
